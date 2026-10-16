@@ -18,23 +18,48 @@ const randomTile = (exclude = new Set()) => {
   return options[Math.floor(Math.random() * options.length)]
 }
 
-function GroundTile({ index, warning, dropped }) {
+function GroundVisuals({ warning, collapsed }) {
+  const mesh = useRef()
+  const helper = useRef(new THREE.Object3D())
+  const color = useRef(new THREE.Color())
+  useEffect(() => {
+    if (!mesh.current) return
+    for (let i = 0; i < SIDE * SIDE; i++) {
+      const [x, , z] = posOf(i)
+      const item = helper.current
+      item.position.set(x, -.25, z)
+      item.scale.setScalar(collapsed.has(i) ? 0 : 1)
+      item.updateMatrix()
+      mesh.current.setMatrixAt(i, item.matrix)
+      color.current.setHex(warning === i ? 0xf4b942 : 0x111b38)
+      mesh.current.setColorAt(i, color.current)
+    }
+    mesh.current.instanceMatrix.needsUpdate = true
+    if (mesh.current.instanceColor) mesh.current.instanceColor.needsUpdate = true
+    mesh.current.computeBoundingSphere()
+  }, [warning, collapsed])
+  return <instancedMesh ref={mesh} args={[undefined, undefined, SIDE * SIDE]} frustumCulled={false}>
+    <boxGeometry args={[STEP * .98, .5, STEP * .98]} />
+    <meshStandardMaterial vertexColors emissive="#071c46" emissiveIntensity={.28} metalness={.25} roughness={.72} />
+  </instancedMesh>
+}
+
+function GroundTile({ index, collapsed }) {
   const body = useRef()
   const [gone, setGone] = useState(false)
-  useEffect(() => { setGone(false); if (body.current) { body.current.setBodyType(dropped ? 0 : 1, true); if (dropped) body.current.setLinvel({ x: 0, y: -0.1, z: 0 }, true) } }, [dropped])
-  useFrame((_, dt) => { if (dropped && body.current) { const p = body.current.translation(); if (p.y < -15) setGone(true) } })
+  useEffect(() => {
+    if (!collapsed || !body.current) return
+    const rigidBody = body.current
+    rigidBody.setBodyType(0, true)
+    rigidBody.setLinvel({ x: 0, y: -.1, z: 0 }, true)
+    const timer = setTimeout(() => { if (rigidBody.translation().y < -12) setGone(true) }, 2200)
+    return () => clearTimeout(timer)
+  }, [collapsed])
   if (gone) return null
   const [x, , z] = posOf(index)
   return <RigidBody ref={body} type="fixed" colliders={false} position={[x, -0.25, z]}>
     <CuboidCollider args={[STEP * .49, .25, STEP * .49]} />
-    <mesh receiveShadow castShadow>
-      <boxGeometry args={[STEP * .98, .5, STEP * .98]} />
-      <meshStandardMaterial color={warning ? '#f4b942' : '#111b38'} emissive={warning ? '#ffb52e' : '#071c46'} emissiveIntensity={warning ? 1.3 : .28} metalness={.35} roughness={.65} />
-    </mesh>
-    <mesh position={[0, .006, 0]}>
-      <boxGeometry args={[STEP * .985, .505, STEP * .985]} />
-      <meshBasicMaterial color={warning ? '#ffc14d' : '#2454a7'} wireframe transparent opacity={warning ? .9 : .32} />
-    </mesh>
+    {collapsed && <mesh><boxGeometry args={[STEP * .98, .5, STEP * .98]} /><meshStandardMaterial color="#111b38" emissive="#071c46" emissiveIntensity={.28} metalness={.25} roughness={.72} /></mesh>}
   </RigidBody>
 }
 
@@ -67,7 +92,6 @@ function Rover({ resetKey, body }) {
       {[-1, 1].flatMap(x => [-1, 1].map(z => <group key={`${x}:${z}`} position={[x * .43, -.13, z * .43]}>
         <mesh rotation={[Math.PI / 2, 0, 0]} castShadow><cylinderGeometry args={[.14, .14, .23, 8]} /><meshStandardMaterial color="#161a27" metalness={.7} roughness={.3} /></mesh>
         <mesh position={[0, -.16, 0]}><sphereGeometry args={[.09, 8, 6]} /><meshBasicMaterial color="#30f5ed" /></mesh>
-        <pointLight position={[0, -.2, 0]} color="#16e6ff" intensity={.55} distance={1.4} />
       </group>))}
       <mesh position={[0, .08, .53]}><boxGeometry args={[.46, .12, .07]} /><meshBasicMaterial color="#43fcff" /></mesh>
     </group>
@@ -84,7 +108,6 @@ function Core({ tile, onCollect }) {
       <mesh ref={mesh}>
         <octahedronGeometry args={[.3, 0]} /><meshStandardMaterial color="#ff58cf" emissive="#ff13aa" emissiveIntensity={3} metalness={.5} roughness={.2} />
       </mesh>
-      <pointLight color="#ff2cc9" intensity={1.2} distance={3.2} />
     </Float>
   </RigidBody>
 }
@@ -95,17 +118,17 @@ function Hazard({ tile }) {
   return <RigidBody type="fixed" colliders={false} position={[x, .1, z]}>
     <CuboidCollider args={[.36, .5, .36]} sensor onIntersectionEnter={push} />
     <mesh castShadow position={[0, .38, 0]}><coneGeometry args={[.35, .85, 4]} /><meshStandardMaterial color="#ff344e" emissive="#d00028" emissiveIntensity={1.4} metalness={.3} roughness={.35} /></mesh>
-    <pointLight color="#ff1e48" intensity={.4} distance={2} />
   </RigidBody>
 }
 
 function FollowCamera({ roverRef }) {
   const target = useRef(new THREE.Vector3())
+  const desired = useRef(new THREE.Vector3())
   useFrame(({ camera }, dt) => {
     const rover = roverRef.current?.translation()
     const p = target.current.set(rover?.x || 0, 0, rover?.z || 0)
-    const desired = new THREE.Vector3(p.x + 22, p.y + 25, p.z + 22)
-    camera.position.lerp(desired, 1 - Math.exp(-dt * 2))
+    desired.current.set(p.x + 22, p.y + 25, p.z + 22)
+    camera.position.lerp(desired.current, 1 - Math.exp(-dt * 2))
     camera.lookAt(p)
   })
   return null
@@ -113,6 +136,7 @@ function FollowCamera({ roverRef }) {
 
 function World({ runKey }) {
   const roverRef = useRef()
+  const gameState = useGameStore(s => s.gameState)
   const incrementScore = useGameStore(s => s.incrementScore)
   const [core, setCore] = useState(() => randomTile(new Set([112])))
   const [hazards] = useState(() => {
@@ -120,31 +144,40 @@ function World({ runKey }) {
     return Array.from({ length: 13 }, () => { const n = randomTile(used); used.add(n); return n })
   })
   const [warning, setWarning] = useState(null)
-  const [dropped, setDropped] = useState(null)
+  const [collapsed, setCollapsed] = useState(() => new Set())
   const collect = useCallback(() => { incrementScore(); const blocked = new Set([112, ...hazards]); setCore(randomTile(blocked)) }, [incrementScore, hazards])
-  useEffect(() => { setCore(randomTile(new Set([112, ...hazards]))) }, [runKey])
+  useEffect(() => { setCore(randomTile(new Set([112, ...hazards]))); setCollapsed(new Set()); setWarning(null) }, [runKey, hazards])
   useEffect(() => {
+    if (gameState !== 'playing') return
     let active = true
+    let warningTimeout
     const cycle = () => {
       if (!active) return
-      const idx = randomTile(new Set([112, core, ...hazards]))
+      const available = [...safeIndices].filter(i => i !== 112 && i !== core && !hazards.includes(i) && !collapsed.has(i))
+      if (!available.length) return
+      const idx = available[Math.floor(Math.random() * available.length)]
       setWarning(idx)
-      setTimeout(() => { if (!active) return; setWarning(null); setDropped(idx); setTimeout(() => { if (active) setDropped(null) }, 1600) }, 1000)
+      warningTimeout = setTimeout(() => {
+        if (!active) return
+        setWarning(null)
+        setCollapsed(previous => new Set(previous).add(idx))
+      }, 1000)
     }
     const id = setInterval(cycle, 3000)
-    return () => { active = false; clearInterval(id) }
-  }, [core, hazards])
+    return () => { active = false; clearInterval(id); clearTimeout(warningTimeout); setWarning(null) }
+  }, [core, hazards, collapsed, gameState])
   return <>
     <color attach="background" args={['#070b18']} /><fog attach="fog" args={['#070b18', 30, 65]} />
-    <ambientLight intensity={.65} /><directionalLight position={[8, 18, 5]} intensity={2.1} castShadow shadow-mapSize={[1024, 1024]} />
+    <ambientLight intensity={.85} /><directionalLight position={[8, 18, 5]} intensity={1.8} />
     <FollowCamera roverRef={roverRef} />
-    <Physics gravity={[0, -16, 0]}>
-      {[...Array(SIDE * SIDE)].map((_, i) => <GroundTile key={`${runKey}-${i}`} index={i} warning={warning === i} dropped={dropped === i} />)}
+    <GroundVisuals warning={warning} collapsed={collapsed} />
+    <Physics gravity={[0, -16, 0]} paused={gameState !== 'playing'}>
+      {[...Array(SIDE * SIDE)].map((_, i) => <GroundTile key={`${runKey}-${i}`} index={i} collapsed={collapsed.has(i)} />)}
       <Rover resetKey={runKey} body={roverRef} />
       {core !== null && <Core key={`${runKey}-${core}`} tile={core} onCollect={collect} />}
       {hazards.map(i => <Hazard key={i} tile={i} />)}
     </Physics>
-    <EffectComposer><Bloom intensity={1.35} luminanceThreshold={.2} luminanceSmoothing={.8} mipmapBlur /></EffectComposer>
+    <EffectComposer multisampling={0}><Bloom intensity={.75} luminanceThreshold={.28} luminanceSmoothing={.65} mipmapBlur /></EffectComposer>
   </>
 }
 
@@ -159,7 +192,7 @@ function HUD({ onRestart }) {
 }
 
 function Overlay({ state, onStart, score, highScore }) {
-  if (state === 'playing') return null
+  if (state !== 'menu') return null
   return <div className="overlay"><div className="panel">
     <div className="eyebrow"><span /> {state === 'menu' ? 'SALVAGE SECTOR 07' : 'SIGNAL LOST'}</div>
     <h1>{state === 'menu' ? <>ISO<span>-</span><br />SCRAP</> : <>RUN<br /><span>ENDED</span></>}</h1>
@@ -178,13 +211,35 @@ function StartNgProfile({ player, signedIn, onSignIn }) {
   </aside>
 }
 
-function Leaderboard({ entries }) {
-  if (!entries.length) return null
-  return <aside className="leaderboard"><div className="leaderboard-title">SECTOR LEADERS <span>TOP 5</span></div>
-    {entries.slice(0, 5).map((entry, index) => <div className="leader-row" key={`${entry.player_id}-${index}`}>
-      <span className="leader-rank">{String(entry.rank || index + 1).padStart(2, '0')}</span><b>{entry.name || 'Player'}</b><strong>{Number(entry.stats?.score ?? entry.score ?? 0).toLocaleString()}</strong>
-    </div>)}
+function Leaderboard({ entries, status, playerId, inline = false }) {
+  if (!inline && !entries.length) return null
+  return <aside className={`leaderboard ${inline ? 'leaderboard-inline' : ''}`}>
+    <div className="leaderboard-title">SECTOR LEADERS <span>TOP 5</span></div>
+    {entries.length ? entries.slice(0, 5).map((entry, index) => <div className={`leader-row ${entry.player_id === playerId ? 'is-you' : ''}`} key={`${entry.player_id}-${index}`}>
+      <span className="leader-rank">{String(entry.rank || index + 1).padStart(2, '0')}</span><b>{entry.name || 'Player'}{entry.player_id === playerId ? ' - YOU' : ''}</b><strong>{Number(entry.stats?.score ?? entry.score ?? 0).toLocaleString()}</strong>
+    </div>) : <p className="leaderboard-empty">{status === 'loading' ? 'Loading the start.ng board...' : status === 'empty' ? 'No runs saved yet. Be the first on the board.' : 'The board is unavailable right now. Try again next run.'}</p>}
   </aside>
+}
+
+function RunEndedPanel({ score, highScore, entries, boardStatus, playerId, signedIn, savedMessage, onRestart, onSignIn }) {
+  return <div className="overlay overlay-ended">
+    <div className="panel panel-ended">
+      <div className="end-layout">
+        <section className="end-summary">
+          <div className="eyebrow"><span /> RUN COMPLETE</div>
+          <h1>RUN<br /><span>ENDED</span></h1>
+          <p>The grid got away. Your salvage run is over.</p>
+          <div className="end-score"><span>FINAL SALVAGE</span><b>{score.toLocaleString()}</b></div>
+          <div className="record">PERSONAL BEST <b>{highScore.toLocaleString()}</b></div>
+          <div className="save-status">{savedMessage || (signedIn ? 'Run finished.' : 'Sign in with start.ng to save your run to the shared board.')}</div>
+          {!signedIn && <button className="panel-sign-in" onClick={onSignIn}>SIGN IN WITH START.NG</button>}
+        </section>
+        <Leaderboard entries={entries} status={boardStatus} playerId={playerId} inline />
+      </div>
+      <button className="start-button" onClick={onRestart}>RUN IT BACK <span>-&gt;</span></button>
+      <div className="panel-foot">WASD / ARROWS | COLLECT CORES TO EXTEND YOUR RUN</div>
+    </div>
+  </div>
 }
 
 export default function App() {
@@ -196,6 +251,7 @@ export default function App() {
   const [player, setPlayer] = useState(null)
   const [signedIn, setSignedIn] = useState(false)
   const [entries, setEntries] = useState([])
+  const [boardStatus, setBoardStatus] = useState('loading')
   const [savedMessage, setSavedMessage] = useState('')
   const refreshStartNg = useCallback(async () => {
     const reply = await askStartNg({ type: 'startng:whoami' }, 'startng:user')
@@ -208,8 +264,12 @@ export default function App() {
     }
   }, [])
   const refreshBoard = useCallback(async () => {
+    setBoardStatus('loading')
     const reply = await askStartNg({ type: 'startng:leaderboard', limit: 5 }, 'startng:leaderboardData')
-    if (reply?.ok && Array.isArray(reply.entries)) setEntries(reply.entries)
+    if (reply?.ok && Array.isArray(reply.entries)) {
+      setEntries(reply.entries)
+      setBoardStatus(reply.entries.length ? 'ready' : 'empty')
+    } else setBoardStatus('unavailable')
   }, [])
   const launch = () => { setRunKey(k => k + 1); startGame() }
   useEffect(() => {
@@ -223,14 +283,19 @@ export default function App() {
   useEffect(() => {
     if (gameState !== 'gameover') { if (gameState === 'playing') setSavedMessage(''); return }
     let cancelled = false
+    setBoardStatus('loading')
+    setSavedMessage(signedIn ? (score > 0 ? 'Saving your run...' : 'No salvage to submit this run.') : 'Sign in with start.ng to save your run to the shared board.')
     ;(async () => {
       if (signedIn && score > 0) {
         const result = await askStartNg({ type: 'startng:score', stats: { score } }, 'startng:scoreSaved')
         if (!cancelled && result?.ok) setSavedMessage(result.result?.improved ? `New start.ng best · #${result.result.rank}` : 'Run recorded on start.ng')
-        else if (!cancelled && result?.error) setSavedMessage(result.error)
+        else if (!cancelled) setSavedMessage(result?.error || 'Could not save this run. Sign in again and try next run.')
       }
       const board = await askStartNg({ type: 'startng:leaderboard', limit: 5 }, 'startng:leaderboardData')
-      if (!cancelled && board?.ok && Array.isArray(board.entries)) setEntries(board.entries)
+      if (!cancelled && board?.ok && Array.isArray(board.entries)) {
+        setEntries(board.entries)
+        setBoardStatus(board.entries.length ? 'ready' : 'empty')
+      } else if (!cancelled) setBoardStatus('unavailable')
     })()
     return () => { cancelled = true }
   }, [gameState, signedIn, score, runKey])
@@ -241,15 +306,15 @@ export default function App() {
   }, [gameState])
   useEffect(() => { const onBlur = () => {}; window.addEventListener('blur', onBlur); return () => window.removeEventListener('blur', onBlur) }, [])
   return <main className="game-shell">
-    <Canvas shadows dpr={[1, 1.6]} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+    <Canvas dpr={[1, 1.2]} gl={{ antialias: true, powerPreference: 'high-performance' }}>
       <OrthographicCamera makeDefault position={[22, 25, 22]} zoom={27} near={.1} far={150} />
       <World runKey={runKey} />
     </Canvas>
     <StartNgProfile player={player} signedIn={signedIn} onSignIn={() => { location.href = signInUrl() }} />
-    <Leaderboard entries={entries} />
-    {savedMessage && gameState === 'gameover' && <div className="save-message">{savedMessage}</div>}
-    {gameState !== 'menu' && <HUD onRestart={launch} />}
+    {gameState === 'playing' && <Leaderboard entries={entries} status={boardStatus} playerId={player?.id} />}
+    {gameState === 'playing' && <HUD onRestart={launch} />}
     <Overlay state={gameState} onStart={launch} score={score} highScore={highScore} />
+    {gameState === 'gameover' && <RunEndedPanel score={score} highScore={highScore} entries={entries} boardStatus={boardStatus} playerId={player?.id} signedIn={signedIn} savedMessage={savedMessage} onRestart={launch} onSignIn={() => { location.href = signInUrl() }} />}
     <div className="corner-note">INDEPENDENT ARCADE <span>•</span> NO SIGNAL REQUIRED</div>
   </main>
 }
