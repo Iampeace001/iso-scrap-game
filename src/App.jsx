@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
-import { Environment, Float, OrthographicCamera, Text } from '@react-three/drei'
+import { Float, OrthographicCamera } from '@react-three/drei'
 import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier'
 import { useGameStore } from './store'
 import { askStartNg, signInUrl } from './startng'
@@ -78,7 +78,7 @@ function Core({ tile, onCollect }) {
   const mesh = useRef()
   const [x, , z] = posOf(tile)
   useFrame((_, dt) => { if (mesh.current) mesh.current.rotation.y += dt * 1.4 })
-  return <RigidBody ref={ref} type="fixed" colliders={false} position={[x, .62, z]}>
+  return <RigidBody type="fixed" colliders={false} position={[x, .62, z]}>
     <CuboidCollider args={[.38, .42, .38]} sensor onIntersectionEnter={onCollect} />
     <Float speed={2.2} floatIntensity={.18}>
       <mesh ref={mesh}>
@@ -174,7 +174,7 @@ function StartNgProfile({ player, signedIn, onSignIn }) {
   return <aside className="startng-profile" aria-label="start.ng player profile">
     {player?.face ? <img src={player.face} alt={`${player.name}'s character`} /> : <span className="profile-fallback">{player?.name?.slice(0, 1) || 'G'}</span>}
     <div className="profile-copy"><b>{player?.name || 'Guest'}</b><span>{signedIn && player?.account ? `@${player.account}` : 'Guest player'}</span></div>
-    {!signedIn && <button onClick={onSignIn}>SIGN IN</button>}
+    {!signedIn && <button onClick={onSignIn}>SIGN IN WITH START.NG</button>}
   </aside>
 }
 
@@ -190,7 +190,6 @@ function Leaderboard({ entries }) {
 export default function App() {
   const gameState = useGameStore(s => s.gameState)
   const startGame = useGameStore(s => s.startGame)
-  const endGame = useGameStore(s => s.endGame)
   const score = useGameStore(s => s.score)
   const highScore = useGameStore(s => s.highScore)
   const [runKey, setRunKey] = useState(0)
