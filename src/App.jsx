@@ -63,8 +63,26 @@ function GroundTile({ index, collapsed }) {
   </RigidBody>
 }
 
-function Rover({ resetKey, body }) {
+function PitMarks({ collapsed }) {
+  return [...collapsed].map(index => {
+    const [x, , z] = posOf(index)
+    return <group key={`pit-${index}`} position={[x, -.49, z]}>
+      <mesh><boxGeometry args={[STEP * .92, .025, STEP * .92]} /><meshBasicMaterial color="#02040a" /></mesh>
+      <group position={[0, .49, 0]}>
+        <mesh position={[0, 0, -STEP * .46]}><boxGeometry args={[STEP * .92, .035, .055]} /><meshBasicMaterial color="#ff3d52" /></mesh>
+        <mesh position={[0, 0, STEP * .46]}><boxGeometry args={[STEP * .92, .035, .055]} /><meshBasicMaterial color="#ff3d52" /></mesh>
+        <mesh position={[-STEP * .46, 0, 0]}><boxGeometry args={[.055, .035, STEP * .92]} /><meshBasicMaterial color="#ff3d52" /></mesh>
+        <mesh position={[STEP * .46, 0, 0]}><boxGeometry args={[.055, .035, STEP * .92]} /><meshBasicMaterial color="#ff3d52" /></mesh>
+      </group>
+    </group>
+  })
+}
+
+function Runner({ resetKey, body }) {
   const keys = useRef(new Set())
+  const figure = useRef()
+  const leftLeg = useRef()
+  const rightLeg = useRef()
   const gameState = useGameStore(s => s.gameState)
   const endGame = useGameStore(s => s.endGame)
   useEffect(() => {
@@ -73,7 +91,7 @@ function Rover({ resetKey, body }) {
     window.addEventListener('keydown', down); window.addEventListener('keyup', up)
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up) }
   }, [])
-  useEffect(() => { keys.current.clear(); if (body.current) { body.current.setTranslation({ x: 0, y: 1.1, z: 0 }, true); body.current.setLinvel({ x: 0, y: 0, z: 0 }, true); body.current.setAngvel({ x: 0, y: 0, z: 0 }, true) } }, [resetKey])
+  useEffect(() => { keys.current.clear(); if (body.current) { body.current.setTranslation({ x: 0, y: .5, z: 0 }, true); body.current.setLinvel({ x: 0, y: 0, z: 0 }, true); body.current.setAngvel({ x: 0, y: 0, z: 0 }, true) } }, [resetKey])
   useFrame((_, dt) => {
     if (!body.current || gameState !== 'playing') return
     const k = keys.current; let x = 0, z = 0
@@ -81,19 +99,25 @@ function Rover({ resetKey, body }) {
     if (k.has('s') || k.has('arrowdown')) z += 1
     if (k.has('a') || k.has('arrowleft')) x -= 1
     if (k.has('d') || k.has('arrowright')) x += 1
-    if (x || z) { const l = Math.hypot(x, z); body.current.applyImpulse({ x: x / l * 0.14 * dt * 60, y: 0, z: z / l * 0.14 * dt * 60 }, true) }
-    const v = body.current.linvel(); body.current.setLinvel({ x: THREE.MathUtils.clamp(v.x, -7, 7), y: v.y, z: THREE.MathUtils.clamp(v.z, -7, 7) }, true)
+    if (x || z) { const l = Math.hypot(x, z); body.current.applyImpulse({ x: x / l * 0.24 * dt * 60, y: 0, z: z / l * 0.24 * dt * 60 }, true) }
+    const v = body.current.linvel(); body.current.setLinvel({ x: THREE.MathUtils.clamp(v.x, -5.5, 5.5), y: v.y, z: THREE.MathUtils.clamp(v.z, -5.5, 5.5) }, true)
+    const speed = Math.hypot(v.x, v.z)
+    if (figure.current && speed > .15) figure.current.rotation.y = THREE.MathUtils.damp(figure.current.rotation.y, Math.atan2(v.x, v.z), 8, dt)
+    const stride = speed > .25 ? Math.sin(performance.now() * .012) * Math.min(.65, speed * .12) : 0
+    if (leftLeg.current) leftLeg.current.rotation.x = stride
+    if (rightLeg.current) rightLeg.current.rotation.x = -stride
     if (body.current.translation().y < -5 || Math.abs(body.current.translation().x) > HALF + 1.8 || Math.abs(body.current.translation().z) > HALF + 1.8) endGame()
   })
-  return <RigidBody ref={body} colliders="cuboid" position={[0, 1.1, 0]} mass={1.5} linearDamping={1.7} angularDamping={3} enabledRotations={[false, true, false]}>
-    <group>
-      <mesh castShadow><boxGeometry args={[.86, .4, 1.12]} /><meshStandardMaterial color="#343d50" metalness={.75} roughness={.32} /></mesh>
-      <mesh castShadow position={[0, .27, -.08]}><boxGeometry args={[.56, .25, .55]} /><meshStandardMaterial color="#59657b" metalness={.6} roughness={.3} /></mesh>
-      {[-1, 1].flatMap(x => [-1, 1].map(z => <group key={`${x}:${z}`} position={[x * .43, -.13, z * .43]}>
-        <mesh rotation={[Math.PI / 2, 0, 0]} castShadow><cylinderGeometry args={[.14, .14, .23, 8]} /><meshStandardMaterial color="#161a27" metalness={.7} roughness={.3} /></mesh>
-        <mesh position={[0, -.16, 0]}><sphereGeometry args={[.09, 8, 6]} /><meshBasicMaterial color="#30f5ed" /></mesh>
-      </group>))}
-      <mesh position={[0, .08, .53]}><boxGeometry args={[.46, .12, .07]} /><meshBasicMaterial color="#43fcff" /></mesh>
+  return <RigidBody ref={body} colliders={false} position={[0, .5, 0]} mass={1} linearDamping={3.2} angularDamping={4} enabledRotations={[false, false, false]}>
+    <CuboidCollider args={[.3, .43, .3]} />
+    <group ref={figure}>
+      <mesh castShadow position={[0, .39, 0]}><capsuleGeometry args={[.25, .42, 3, 7]} /><meshStandardMaterial color="#20bfc4" roughness={.7} /></mesh>
+      <mesh castShadow position={[0, .91, 0]}><sphereGeometry args={[.23, 10, 8]} /><meshStandardMaterial color="#e7aa83" roughness={.8} /></mesh>
+      <mesh position={[0, 1.04, -.015]}><sphereGeometry args={[.235, 8, 5, 0, Math.PI * 2, 0, Math.PI * .52]} /><meshStandardMaterial color="#17253c" roughness={.85} /></mesh>
+      <mesh position={[0, .43, .255]}><boxGeometry args={[.16, .16, .035]} /><meshBasicMaterial color="#56fff0" /></mesh>
+      {[-1, 1].map(side => <group key={`arm-${side}`} position={[side * .29, .56, 0]} rotation={[0, 0, side * -.12]}><mesh castShadow position={[0, -.16, 0]}><capsuleGeometry args={[.085, .25, 2, 5]} /><meshStandardMaterial color="#dd9b77" roughness={.8} /></mesh></group>)}
+      <group ref={leftLeg} position={[-.13, .15, 0]}><mesh castShadow position={[0, -.16, 0]}><capsuleGeometry args={[.095, .3, 2, 5]} /><meshStandardMaterial color="#303c59" roughness={.8} /></mesh><mesh position={[0, -.34, .055]}><boxGeometry args={[.17, .09, .27]} /><meshStandardMaterial color="#151b2b" /></mesh></group>
+      <group ref={rightLeg} position={[.13, .15, 0]}><mesh castShadow position={[0, -.16, 0]}><capsuleGeometry args={[.095, .3, 2, 5]} /><meshStandardMaterial color="#303c59" roughness={.8} /></mesh><mesh position={[0, -.34, .055]}><boxGeometry args={[.17, .09, .27]} /><meshStandardMaterial color="#151b2b" /></mesh></group>
     </group>
   </RigidBody>
 }
@@ -173,7 +197,8 @@ function World({ runKey }) {
     <GroundVisuals warning={warning} collapsed={collapsed} />
     <Physics gravity={[0, -16, 0]} paused={gameState !== 'playing'}>
       {[...Array(SIDE * SIDE)].map((_, i) => <GroundTile key={`${runKey}-${i}`} index={i} collapsed={collapsed.has(i)} />)}
-      <Rover resetKey={runKey} body={roverRef} />
+      <PitMarks collapsed={collapsed} />
+      <Runner resetKey={runKey} body={roverRef} />
       {core !== null && <Core key={`${runKey}-${core}`} tile={core} onCollect={collect} />}
       {hazards.map(i => <Hazard key={i} tile={i} />)}
     </Physics>
@@ -187,7 +212,7 @@ function HUD({ onRestart }) {
     <div className="brand"><span className="brand-mark"><Zap size={19} fill="currentColor" /></span><div><b>ISO-SCRAP</b><small>NEON SALVAGE</small></div></div>
     <div className="hud-stats"><div className="stat"><span>SALVAGE</span><strong>{String(score).padStart(5, '0')}</strong></div><div className={`stat time ${timeRemaining <= 10 ? 'urgent' : ''}`}><span><Clock3 size={12} /> TIME</span><strong>00:{String(timeRemaining).padStart(2, '0')}</strong></div></div>
     <div className="hud-right"><div className="best">BEST <b>{String(highScore).padStart(5, '0')}</b></div><button className="icon-button" onClick={onRestart} aria-label="Restart run"><RotateCcw size={16} /></button></div>
-    <div className="controls"><span>DRIVE</span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span className="or">OR</span><kbd><ArrowUp size={13} /></kbd><kbd><ArrowLeft size={13} /></kbd><kbd><ArrowDown size={13} /></kbd><kbd><ArrowRight size={13} /></kbd><em>Collect cores · dodge spikes · stay on the grid</em></div>
+    <div className="controls"><span>MOVE</span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span className="or">OR</span><kbd><ArrowUp size={13} /></kbd><kbd><ArrowLeft size={13} /></kbd><kbd><ArrowDown size={13} /></kbd><kbd><ArrowRight size={13} /></kbd><em>Yellow tile = falling soon | Red edge = pit | Pink = core</em></div>
   </div>
 }
 
@@ -196,7 +221,7 @@ function Overlay({ state, onStart, score, highScore }) {
   return <div className="overlay"><div className="panel">
     <div className="eyebrow"><span /> {state === 'menu' ? 'SALVAGE SECTOR 07' : 'SIGNAL LOST'}</div>
     <h1>{state === 'menu' ? <>ISO<span>-</span><br />SCRAP</> : <>RUN<br /><span>ENDED</span></>}</h1>
-    <p>{state === 'menu' ? 'The grid is unstable. The cores are yours for the taking.' : `You recovered ${score.toLocaleString()} salvage points.`}</p>
+    <p>{state === 'menu' ? 'Move the runner, grab pink cores, and step off any tile flashing yellow before it drops.' : `You recovered ${score.toLocaleString()} salvage points.`}</p>
     {state === 'gameover' && <div className="record">PERSONAL BEST <b>{highScore.toLocaleString()}</b></div>}
     <button className="start-button" onClick={onStart}>{state === 'menu' ? 'DROP INTO THE GRID' : 'RUN IT BACK'} <span>↗</span></button>
     <div className="panel-foot">WASD / ARROWS <span>·</span> COLLECT TO EXTEND YOUR RUN</div>
