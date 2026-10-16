@@ -1,0 +1,7 @@
+{
+  "leaderboard": {
+    "stats": [
+      { "key": "score", "label": "Salvage score", "order": "highest" }
+    ]
+  }
+}
