@@ -237,12 +237,15 @@ function StartNgProfile({ player, signedIn, onSignIn }) {
 }
 
 function Leaderboard({ entries, status, playerId, inline = false }) {
-  if (!inline && !entries.length) return null
+  const rows = Array.from({ length: 5 }, (_, index) => entries[index] ?? null)
   return <aside className={`leaderboard ${inline ? 'leaderboard-inline' : ''}`}>
     <div className="leaderboard-title">SECTOR LEADERS <span>TOP 5</span></div>
-    {entries.length ? entries.slice(0, 5).map((entry, index) => <div className={`leader-row ${entry.player_id === playerId ? 'is-you' : ''}`} key={`${entry.player_id}-${index}`}>
-      <span className="leader-rank">{String(entry.rank || index + 1).padStart(2, '0')}</span><b>{entry.name || 'Player'}{entry.player_id === playerId ? ' - YOU' : ''}</b><strong>{Number(entry.stats?.score ?? entry.score ?? 0).toLocaleString()}</strong>
-    </div>) : <p className="leaderboard-empty">{status === 'loading' ? 'Loading the start.ng board...' : status === 'empty' ? 'No runs saved yet. Be the first on the board.' : 'The board is unavailable right now. Try again next run.'}</p>}
+    {rows.map((entry, index) => <div className={`leader-row ${entry?.player_id === playerId ? 'is-you' : ''} ${entry ? '' : 'leader-row-empty'}`} key={entry ? `${entry.player_id}-${index}` : `empty-${index}`}>
+      <span className="leader-rank">{String(entry?.rank || index + 1).padStart(2, '0')}</span>
+      <b>{entry ? `${entry.name || 'Player'}${entry.player_id === playerId ? ' - YOU' : ''}` : status === 'loading' ? 'Loading...' : 'Open spot'}</b>
+      <strong>{entry ? Number(entry.stats?.score ?? entry.score ?? 0).toLocaleString() : '--'}</strong>
+    </div>)}
+    {!entries.length && <p className="leaderboard-empty">{status === 'loading' ? 'Getting the latest start.ng scores...' : status === 'empty' ? 'No scores posted yet. Be the first on the board.' : 'Scores are temporarily unavailable.'}</p>}
   </aside>
 }
 
